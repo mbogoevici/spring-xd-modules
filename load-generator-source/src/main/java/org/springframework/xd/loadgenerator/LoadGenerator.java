@@ -17,12 +17,16 @@ package org.springframework.xd.loadgenerator;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
 import org.springframework.integration.endpoint.MessageProducerSupport;
 import org.springframework.integration.support.MessageBuilder;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.MessageHeaders;
 
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -37,9 +41,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class LoadGenerator extends MessageProducerSupport {
 
 	private int producers;
+
 	private int messageSize;
+
 	private int messageCount;
+
 	private final AtomicBoolean running = new AtomicBoolean(false);
+
 	private ExecutorService executorService;
 
 	Logger logger = LoggerFactory.getLogger(LoadGenerator.class);
@@ -55,7 +63,7 @@ public class LoadGenerator extends MessageProducerSupport {
 		executorService = Executors.newFixedThreadPool(producers);
 		if (running.compareAndSet(false, true)) {
 			for (int x = 0; x < producers; x++) {
-				executorService.submit(new Producer());
+				executorService.execute(new Producer(x));
 			}
 		}
 	}
@@ -68,11 +76,18 @@ public class LoadGenerator extends MessageProducerSupport {
 	}
 
 	protected class Producer implements Runnable {
-		
+
+		int producerId;
+
+		public Producer(int producerId) {
+			this.producerId = producerId;
+		}
+
 		private void send() {
-			logger.info("Sending " + messageCount + " messages");
+			logger.info("Producer " + producerId + " sending " + messageCount + " messages");
 			for (int x = 0; x < messageCount; x++) {
-				sendMessage(MessageBuilder.withPayload(createMessage(x)).build());
+				final byte[] message = createMessage(x);
+				sendMessage(new TestMessage(message));
 			}
 			logger.info("All Messages Dispatched");
 		}
@@ -86,28 +101,38 @@ public class LoadGenerator extends MessageProducerSupport {
 		 */
 		private byte[] createMessage(int sequenceNumber) {
 			byte message[] = new byte[messageSize];
-			try {
-				ByteArrayOutputStream acc = new ByteArrayOutputStream();
-				DataOutputStream d = new DataOutputStream(acc);
-				long nano = System.nanoTime();
-				d.writeInt(sequenceNumber);
-				d.writeLong(nano);
-				d.flush();
-				acc.flush();
-				byte[] m = acc.toByteArray();
-				if (m.length <= messageSize) {
-					System.arraycopy(m, 0, message, 0, m.length);
-					return message;
-				} else {
-					return m;
-				}
-			} catch (IOException ioe) {
-				throw new IllegalStateException(ioe);
-			}
+			return message;
 		}
 
 		public void run() {
 			send();
+		}
+
+		private class TestMessage implements Message<byte[]> {
+			private final byte[] message;
+
+			private final TestMessageHeaders headers;
+
+			public TestMessage(byte[] message) {
+				this.message = message;
+				this.headers = new TestMessageHeaders(null);
+			}
+
+			@Override
+			public byte[] getPayload() {
+				return message;
+			}
+
+			@Override
+			public MessageHeaders getHeaders() {
+				return headers;
+			}
+
+			class TestMessageHeaders extends MessageHeaders {
+				public TestMessageHeaders(Map<String, Object> headers) {
+					super(headers, ID_VALUE_NONE, -1L);
+				}
+			}
 		}
 	}
 }

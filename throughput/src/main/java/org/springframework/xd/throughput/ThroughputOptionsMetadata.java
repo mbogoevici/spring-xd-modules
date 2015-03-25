@@ -15,7 +15,7 @@ import org.springframework.xd.module.options.spi.ModulePlaceholders;
  */
 public class ThroughputOptionsMetadata {
 
-	private long reportEveryMs = 10_000L;
+	private long reportEveryMs = 10000L;
 
 	private long reportEveryNumber = Long.MAX_VALUE;
 
