@@ -73,7 +73,9 @@ public class ThroughputMessageHandler implements MessageHandler, Lifecycle {
 
 	@Override
 	public void start() {
-		executorService = Executors.newFixedThreadPool(1);
+		if (executorService == null) {
+			executorService = Executors.newFixedThreadPool(1);
+		}
 		this.running = true;
 	}
 
@@ -89,12 +91,11 @@ public class ThroughputMessageHandler implements MessageHandler, Lifecycle {
 
 	@Override
 	public void handleMessage(Message<?> message) throws MessagingException {
-		intermediateCounter.incrementAndGet();
-
 		if (start.get() == -1L) {
 			synchronized (start) {
 				if (start.get() == -1) {
 					executorService.execute(new ReportStats());
+					start.set(clock.now());
 				}
 				// assume a homogenous message structure - this is intended for perf tests so we can safely assume
 				// that the messages are similar, therefore we'll do our reporting based on the first message
@@ -104,6 +105,7 @@ public class ThroughputMessageHandler implements MessageHandler, Lifecycle {
 				}
 			}
 		}
+		intermediateCounter.incrementAndGet();
 		if (reportBytes) {
 			Object payload = message.getPayload();
 			if (payload instanceof byte[]) {
@@ -205,6 +207,7 @@ public class ThroughputMessageHandler implements MessageHandler, Lifecycle {
 			while (isRunning()) {
 				intermediateCounter.set(0L);
 				intermediateBytes.set(0L);
+				long intervalStart = clock.now();
 				try {
 					Thread.sleep(reportEveryMs);
 					long timeNow = clock.now();
@@ -214,23 +217,23 @@ public class ThroughputMessageHandler implements MessageHandler, Lifecycle {
 					long totalBytes = bytes.addAndGet(currentBytes);
 
 					System.out.println(
-							String.format("Messages: %10d in %5.2f%s = %11.2f/%3$s",
+							String.format("Messages: %10d in %5.2f%s = %11.2f/s",
 									currentCounter,
-									reportEveryMs / 1000.0, timeUnit, ((double) currentCounter * 1000 / reportEveryMs)));
+									(timeNow - intervalStart)/ 1000.0, timeUnit, ((double) currentCounter * 1000 / reportEveryMs)));
 					System.out.println(
-							String.format("Messages: %10d in %5.2f%s = %11.2f/%3$s",
+							String.format("Messages: %10d in %5.2f%s = %11.2f/s",
 									totalCounter, (timeNow - start.get()) / 1000.0, timeUnit,
 									((double) totalCounter * 1000 / (timeNow - start.get()))));
 					if (reportBytes) {
 						System.out.println(
-								String.format("Throughput: %10d MB in %5.2f%s = %11.2fMB/%3$s, ",
+								String.format("Throughput: %12d in %5.2f%s = %11.2fMB/s, ",
 										currentBytes,
-										reportEveryMs / 1000.0, timeUnit,
-										(((double) currentBytes / (1024 * 1024)) / reportEveryMs)));
+										(timeNow - intervalStart)/ 1000.0, timeUnit,
+										(((double) currentBytes / (1024.0 * 1024)) * 1000 / reportEveryMs)));
 						System.out.println(
-								String.format("Messages: %10d MB in%5.2f%s = %11.2fMB/%3$s",
+								String.format("Throughput: %12d in %5.2f%s = %11.2fMB/s",
 										totalBytes, (timeNow - start.get()) / 1000.0, timeUnit,
-										(((double) totalBytes / (1024 * 1024)) / (timeNow - start.get()))));
+										(((double) totalBytes / (1024.0 * 1024)) * 1000 / (timeNow - start.get()))));
 					}
 				}
 				catch (InterruptedException e) {
